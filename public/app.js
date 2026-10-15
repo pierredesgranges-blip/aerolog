@@ -1,4 +1,4 @@
-/* AeroLog — interface web (vanilla JS + Leaflet) */
+/* AeroLog — interface web (vanilla JS + MapLibre GL) */
 (() => {
   'use strict';
 
@@ -56,16 +56,104 @@
   });
   $('#yearFilter').addEventListener('change', e => { state.year = e.target.value; localStorage.setItem('al.year', state.year); route(); });
 
-  /* ================= Cartographie ================= */
+  /* ================= Cartographie (MapLibre GL + OpenFreeMap) ================= */
+  const BASEMAPS = {
+    dark: { label: 'Sombre', url: 'https://tiles.openfreemap.org/styles/dark' },
+    fiord: { label: 'Fiord', url: 'https://tiles.openfreemap.org/styles/fiord' },
+    positron: { label: 'Clair', url: 'https://tiles.openfreemap.org/styles/positron' },
+    liberty: { label: 'Liberty', url: 'https://tiles.openfreemap.org/styles/liberty' },
+    bright: { label: 'Bright', url: 'https://tiles.openfreemap.org/styles/bright' },
+  };
+  // Fond minimal utilisé si le serveur de tuiles est injoignable : les vols restent visibles
+  const FALLBACK_STYLE = { version: 8, sources: {}, layers: [{ id: 'bg', type: 'background', paint: { 'background-color': '#0a0f1b' } }] };
+  const mapPrefs = {
+    get style() { return localStorage.getItem('al.style') || (state.meta && state.meta.mapStyle) || 'dark'; },
+    set style(v) { localStorage.setItem('al.style', v); },
+    get globe() { const v = localStorage.getItem('al.globe'); return v == null ? true : v === '1'; },
+    set globe(v) { localStorage.setItem('al.globe', v ? '1' : '0'); },
+  };
+  const styleUrl = key => (BASEMAPS[key] ? BASEMAPS[key].url : /^https?:\/\//.test(key) ? key : BASEMAPS.dark.url);
+  const lonlat = p => [p[1], p[0]]; // [lat,lon] → [lon,lat]
+
+  // Contrôle « fond de carte + globe »
+  class BasemapControl {
+    constructor(w) { this.w = w; }
+    onAdd() {
+      const el = document.createElement('div');
+      el.className = 'maplibregl-ctrl maplibregl-ctrl-group basemap-ctrl';
+      const custom = !BASEMAPS[mapPrefs.style];
+      el.innerHTML = `<select title="Fond de carte">${custom ? '<option value="custom" selected>Personnalisé</option>' : ''}${Object.entries(BASEMAPS).map(([k, b]) => `<option value="${k}" ${k === mapPrefs.style ? 'selected' : ''}>${b.label}</option>`).join('')}</select>
+        <button type="button" class="globe-btn ${mapPrefs.globe ? 'on' : ''}" title="Vue globe / plane">🌐</button>`;
+      $('select', el).onchange = e => { mapPrefs.style = e.target.value; maps.forEach(m => m.setBasemap()); };
+      $('button', el).onclick = () => { mapPrefs.globe = !mapPrefs.globe; maps.forEach(m => m.applyProjection()); $$('.globe-btn').forEach(b => b.classList.toggle('on', mapPrefs.globe)); };
+      return el;
+    }
+    onRemove() {}
+  }
+
   const maps = [];
   function newMap(el, opts = {}) {
-    const m = L.map(el, { worldCopyJump: true, zoomSnap: 0.25, minZoom: 1.5, attributionControl: true, ...opts });
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      subdomains: 'abcd', maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
-    }).addTo(m);
-    maps.push(m);
-    return m;
+    const map = new maplibregl.Map({
+      container: el, style: styleUrl(mapPrefs.style), center: [2, 46], zoom: 3,
+      attributionControl: { compact: true }, renderWorldCopies: true, maxPitch: 0, dragRotate: false,
+    });
+    map.touchZoomRotate.disableRotation();
+    const w = { map, sources: new Map(), markers: [], ready: false, fitArgs: null };
+
+    w.applyProjection = () => { try { map.setProjection({ type: mapPrefs.globe && !opts.flat ? 'globe' : 'mercator' }); } catch (_) { /* style pas prêt */ } };
+    w.restore = () => {
+      w.ready = true;
+      w.applyProjection();
+      for (const [id, s] of w.sources) addSource(id, s);
+    };
+    w.setBasemap = () => { fellBack = false; map.setStyle(styleUrl(mapPrefs.style)); };
+    let fellBack = false;
+    map.on('style.load', w.restore);
+    map.on('error', e => {
+      // Style ou tuiles de base injoignables : bascule sur le fond minimal
+      if (!map.isStyleLoaded() && !fellBack) { fellBack = true; console.warn('Fond de carte indisponible', e.error && e.error.message); map.setStyle(FALLBACK_STYLE); }
+    });
+    setTimeout(() => { if (!w.ready && !fellBack) { fellBack = true; map.setStyle(FALLBACK_STYLE); } }, 8000);
+
+    if (!opts.minimal) {
+      map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
+      map.addControl(new maplibregl.FullscreenControl(), 'top-left');
+      map.addControl(new BasemapControl(w), 'top-right');
+    }
+
+    function addSource(id, s) {
+      if (map.getSource(id)) { map.getSource(id).setData(s.data); return; }
+      map.addSource(id, { type: 'geojson', data: s.data, lineMetrics: false });
+      s.layers.forEach(l => map.addLayer({ ...l, source: id }));
+    }
+    // Déclare (ou met à jour) une source GeoJSON et ses couches ; réappliquées à chaque changement de fond
+    w.set = (id, data, layers) => {
+      const s = w.sources.get(id) || { layers };
+      s.data = data; w.sources.set(id, s);
+      if (w.ready && map.isStyleLoaded()) addSource(id, s);
+    };
+    w.clear = () => {
+      for (const id of w.sources.keys()) w.set(id, { type: 'FeatureCollection', features: [] });
+      w.markers.forEach(m => m.remove()); w.markers = [];
+    };
+    w.fit = (latlons, o = {}) => {
+      if (!latlons.length) return;
+      const b = new maplibregl.LngLatBounds();
+      latlons.forEach(p => b.extend(lonlat(p)));
+      map.fitBounds(b, { padding: o.padding ?? 40, maxZoom: o.maxZoom ?? 9, duration: 0 });
+    };
+    // Repère d'aéroport en HTML (libellé permanent, indépendant des polices du style)
+    w.label = (ap, color) => {
+      if (!ap || ap.lat == null) return;
+      const d = document.createElement('div');
+      d.className = 'apt-mk';
+      d.innerHTML = `<i style="background:${color}"></i><span>${esc(ap.code || ap.iata || ap.icao)} · ${esc(ap.city || ap.name)}</span>`;
+      w.markers.push(new maplibregl.Marker({ element: d, anchor: 'left', offset: [-6, 0] }).setLngLat([ap.lon, ap.lat]).addTo(map));
+    };
+    w.remove = () => map.remove();
+    new ResizeObserver(() => map.resize()).observe(el);
+    maps.push(w);
+    return w;
   }
   function clearMaps() { while (maps.length) maps.pop().remove(); }
 
@@ -103,24 +191,33 @@
     const c = stops[i].map((v, k) => Math.round(v + (stops[i + 1][k] - v) * f));
     return `rgb(${c.join(',')})`;
   };
-  function drawTrack(map, track) {
+  const line = (latlons, props = {}) => ({ type: 'Feature', properties: props, geometry: { type: 'LineString', coordinates: latlons.map(lonlat) } });
+  const fc = features => ({ type: 'FeatureCollection', features });
+  // Trace découpée en tronçons de couleur homogène (altitude)
+  function trackFeatures(track) {
     const pts = unwrap(track.map(p => [p[0], p[1]]));
-    const hasAlt = track.some(p => p[2]);
-    const group = L.featureGroup();
-    if (!hasAlt) { L.polyline(pts, { color: '#f5b544', weight: 3 }).addTo(group); return group.addTo(map); }
+    if (!track.some(p => p[2])) return [line(pts, { color: '#f5b544' })];
+    const out = [];
     let run = [pts[0]], col = altColor(track[0][2]);
     for (let i = 1; i < pts.length; i++) {
       const c = altColor(track[i][2]);
       run.push(pts[i]);
-      if (c !== col || i === pts.length - 1) { L.polyline(run, { color: col, weight: 3.2, opacity: .95 }).addTo(group); run = [pts[i]]; col = c; }
+      if (c !== col || i === pts.length - 1) { out.push(line(run, { color: col })); run = [pts[i]]; col = c; }
     }
-    return group.addTo(map);
+    return out;
   }
-  function aptMarker(ap, map, opts = {}) {
-    if (ap.lat == null) return null;
-    return L.circleMarker([ap.lat, ap.lon], { radius: opts.r || 4, color: '#0b1220', weight: 1.5, fillColor: opts.color || '#e6ecf7', fillOpacity: 1 })
-      .bindTooltip(`${esc(ap.code)} · ${esc(ap.city || ap.name)}`, { className: 'apt', direction: 'top', permanent: !!opts.permanent, offset: [0, -4] })
-      .addTo(map);
+  // Couche « route » : trace réelle (trait plein, couleur par tronçon) ou orthodromie (pointillés)
+  function drawRoute(w, f, ap) {
+    const dep = ap ? ap.dep : f.dep, arr = ap ? ap.arr : f.arr;
+    const solid = f.track ? trackFeatures(f.track) : [];
+    const dashed = !f.track && dep && arr && dep.lat != null && arr.lat != null ? [line(greatCircle([dep.lat, dep.lon], [arr.lat, arr.lon]), { color: ROLE_COLOR[f.role] || '#f5b544' })] : [];
+    w.set('route-solid', fc(solid), [
+      { id: 'route-casing', type: 'line', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#05080f', 'line-width': 6, 'line-opacity': .55 } },
+      { id: 'route-solid', type: 'line', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': ['get', 'color'], 'line-width': 3.4 } },
+    ]);
+    w.set('route-dashed', fc(dashed), [{ id: 'route-dashed', type: 'line', layout: { 'line-cap': 'round' }, paint: { 'line-color': ['get', 'color'], 'line-width': 2.6, 'line-dasharray': [2, 2] } }]);
+    const pts = f.track ? unwrap(f.track.map(p => [p[0], p[1]])) : dashed.length ? dashed[0].geometry.coordinates.map(c => [c[1], c[0]]) : [];
+    return pts;
   }
 
   /* ================= Routeur ================= */
@@ -203,20 +300,34 @@
   }
 
   function drawOverview(el, flights, tracks) {
-    const map = newMap(el);
+    const w = newMap(el), map = w.map;
     const trackById = new Map(tracks.map(t => [t.id, t.path]));
-    const seen = new Map(); const bounds = [];
-    for (const f of flights) {
+    const seen = new Map(), lines = [];
+    // Les vols les plus anciens d'abord : les récents sont dessinés par-dessus
+    for (const f of [...flights].reverse()) {
       if (f.dep.lat == null || f.arr.lat == null) continue;
-      const path = trackById.has(f.id) ? unwrap(trackById.get(f.id)) : greatCircle([f.dep.lat, f.dep.lon], [f.arr.lat, f.arr.lon], 64);
-      L.polyline(path, { color: ROLE_COLOR[f.role] || '#fff', weight: trackById.has(f.id) ? 1.8 : 1.4, opacity: .55, dashArray: trackById.has(f.id) ? null : null })
-        .on('click', () => (location.hash = `#/flight/${f.id}`))
-        .bindTooltip(`${esc(f.dep_code)} → ${esc(f.arr_code)} · ${fmtDate(f.date)}`, { className: 'apt', sticky: true })
-        .addTo(map);
-      for (const a of [f.dep, f.arr]) { seen.set(a.code, { ...a, n: (seen.get(a.code)?.n || 0) + 1 }); bounds.push([a.lat, a.lon]); }
+      const real = trackById.has(f.id);
+      const path = real ? unwrap(trackById.get(f.id)) : greatCircle([f.dep.lat, f.dep.lon], [f.arr.lat, f.arr.lon], 64);
+      lines.push(line(path, { id: f.id, color: ROLE_COLOR[f.role] || '#fff', real: real ? 1 : 0, label: `${f.dep_code} → ${f.arr_code} · ${fmtDate(f.date)}${f.flight_number ? ' · ' + f.flight_number : ''}` }));
+      for (const a of [f.dep, f.arr]) seen.set(a.code, { ...a, n: (seen.get(a.code)?.n || 0) + 1 });
     }
-    for (const a of seen.values()) aptMarker(a, map, { r: Math.min(8, 3 + Math.log2(a.n)) });
-    if (bounds.length) map.fitBounds(bounds, { padding: [30, 30], maxZoom: 7 }); else map.setView([46, 2], 4);
+    const apts = [...seen.values()].map(a => ({ type: 'Feature', properties: { label: `${a.code} · ${a.city || a.name} (${a.n})`, n: a.n }, geometry: { type: 'Point', coordinates: [a.lon, a.lat] } }));
+    w.set('flights', fc(lines), [
+      { id: 'flights', type: 'line', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': ['get', 'color'], 'line-width': ['case', ['==', ['get', 'real'], 1], 2, 1.6], 'line-opacity': .6 } },
+      { id: 'flights-hit', type: 'line', paint: { 'line-color': '#000', 'line-width': 10, 'line-opacity': 0 } },
+    ]);
+    w.set('airports', fc(apts), [{
+      id: 'airports', type: 'circle',
+      paint: { 'circle-radius': ['min', 9, ['+', 3, ['*', 1.2, ['ln', ['get', 'n']]]]], 'circle-color': '#e6ecf7', 'circle-stroke-color': '#0b1220', 'circle-stroke-width': 1.5 },
+    }]);
+    const pop = new maplibregl.Popup({ closeButton: false, closeOnClick: false, className: 'apt-pop', offset: 8 });
+    for (const layer of ['flights-hit', 'airports']) {
+      map.on('mousemove', layer, e => { map.getCanvas().style.cursor = layer === 'flights-hit' ? 'pointer' : ''; pop.setLngLat(e.lngLat).setText(e.features[0].properties.label).addTo(map); });
+      map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; pop.remove(); });
+    }
+    map.on('click', 'flights-hit', e => (location.hash = `#/flight/${e.features[0].properties.id}`));
+    const pts = [...seen.values()].map(a => [a.lat, a.lon]);
+    if (pts.length) w.fit(pts, { padding: 50, maxZoom: 6 });
   }
 
   /* ================= Liste des vols ================= */
@@ -309,23 +420,15 @@
         </div>
       </div>`;
 
-    const map = newMap($('#map'));
+    const w = newMap($('#map'));
+    const pts = drawRoute(w, f);
+    if (pts.length) w.fit(pts, { padding: 50, maxZoom: 9 });
+    w.label(f.dep, '#4fd1a1'); w.label(f.arr, '#ff8a65');
     let marker = null;
-    if (f.track) {
-      const g = drawTrack(map, f.track);
-      map.fitBounds(g.getBounds(), { padding: [30, 30] });
-    } else if (f.dep.lat != null && f.arr.lat != null) {
-      const p = greatCircle([f.dep.lat, f.dep.lon], [f.arr.lat, f.arr.lon]);
-      const l = L.polyline(p, { color: ROLE_COLOR[f.role], weight: 3, dashArray: '6 6' }).addTo(map);
-      map.fitBounds(l.getBounds(), { padding: [40, 40], maxZoom: 8 });
-    } else map.setView([46, 2], 4);
-    aptMarker(f.dep, map, { r: 6, color: '#4fd1a1', permanent: true });
-    aptMarker(f.arr, map, { r: 6, color: '#ff8a65', permanent: true });
-
     if ($('#profile')) drawProfile($('#profile'), f.track, i => {
       const p = f.track[i];
-      if (!marker) marker = L.circleMarker([p[0], p[1]], { radius: 6, color: '#fff', weight: 2, fillColor: '#f5b544', fillOpacity: 1 }).addTo(map);
-      marker.setLatLng([p[0], p[1]]);
+      if (!marker) { const d = document.createElement('div'); d.className = 'plane-mk'; marker = new maplibregl.Marker({ element: d }).setLngLat([p[1], p[0]]).addTo(w.map); }
+      marker.setLngLat([p[1], p[0]]);
     });
 
     $('#del').onclick = async () => {
@@ -501,18 +604,17 @@
     };
 
     // Mini-carte de prévisualisation
-    const mini = newMap($('#mini'), { zoomControl: false, attributionControl: false });
-    let layer = L.layerGroup().addTo(mini);
+    const mini = newMap($('#mini'), { minimal: true, flat: true });
     const ap = { dep: f.dep && f.dep.lat != null ? f.dep : null, arr: f.arr && f.arr.lat != null ? f.arr : null };
     const preview = () => {
-      layer.clearLayers();
-      const tr = pendingTrack || f.track;
-      if (tr) { const g = drawTrack(layer, tr); mini.fitBounds(g.getBounds(), { padding: [20, 20] }); }
-      else if (ap.dep && ap.arr) { const l = L.polyline(greatCircle([ap.dep.lat, ap.dep.lon], [ap.arr.lat, ap.arr.lon]), { color: ROLE_COLOR[f.role], weight: 2.5, dashArray: '6 6' }).addTo(layer); mini.fitBounds(l.getBounds(), { padding: [30, 30], maxZoom: 8 }); }
-      else mini.setView([46, 2], 4);
-      for (const a of [ap.dep, ap.arr]) if (a) aptMarker(a, layer, { r: 5, permanent: true });
+      mini.clear();
+      const pts = drawRoute(mini, { ...f, track: pendingTrack || f.track }, ap);
+      if (pts.length) mini.fit(pts, { padding: 40, maxZoom: 8 });
+      else if (ap.dep || ap.arr) mini.fit([ap.dep, ap.arr].filter(Boolean).map(a => [a.lat, a.lon]), { maxZoom: 6 });
+      if (ap.dep) mini.label(ap.dep, '#4fd1a1');
+      if (ap.arr) mini.label(ap.arr, '#ff8a65');
     };
-    setTimeout(() => { mini.invalidateSize(); preview(); }, 50);
+    preview();
 
     const apRender = a => `<b>${esc(a.iata || a.icao)}</b><div>${esc(a.city)} – ${esc(a.name)}<br><span>${esc(a.icao || '')} · ${esc(a.country)}</span></div>`;
     for (const k of ['dep', 'arr']) {
@@ -638,10 +740,10 @@
           <p style="margin-top:16px">La base SQLite se trouve aussi dans le volume <code>/data/aerolog.db</code>.</p>
         </div></section>
         <section class="panel"><header><h2>Importer des vols</h2></header><div class="body">
-          <p>Fichier JSON AeroLog ou CSV (virgule ou point-virgule). Colonnes CSV reconnues : <code>date</code>, <code>dep_code</code>, <code>arr_code</code> (obligatoires), <code>flight_number</code>, <code>airline_code</code>, <code>role</code>, <code>dep_time</code>, <code>arr_time</code>, <code>aircraft_type</code>, <code>aircraft_reg</code>, <code>seat</code>, <code>cabin_class</code>, <code>notes</code>…</p>
+          <p><b>Export FlightLog</b> (menu Export → JSON ou XML), sauvegarde JSON AeroLog, ou CSV (virgule ou point-virgule). Colonnes CSV reconnues : <code>date</code>, <code>dep_code</code>, <code>arr_code</code> (obligatoires), <code>flight_number</code>, <code>airline_code</code>, <code>role</code>, <code>dep_time</code>, <code>arr_time</code>, <code>aircraft_type</code>, <code>aircraft_reg</code>, <code>seat</code>, <code>cabin_class</code>, <code>notes</code>…</p>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <select id="impMode"><option value="append">Ajouter aux vols existants</option><option value="replace">Remplacer tous les vols</option></select>
-            <label class="btn">Choisir un fichier<input type="file" id="imp" accept=".json,.csv,text/csv,application/json" hidden></label></div>
+            <label class="btn">Choisir un fichier<input type="file" id="imp" accept=".json,.xml,.csv,text/csv,application/json,application/xml,text/xml" hidden></label></div>
           <div class="log" id="impLog" hidden></div>
         </div></section>
       </div>`;

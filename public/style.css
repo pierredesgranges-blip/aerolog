@@ -85,12 +85,24 @@ main { padding: 20px; max-width: 1480px; margin: 0 auto; }
 .dash { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; }
 .map { height: 560px; border-radius: 0 0 var(--radius) var(--radius); background: #0a0f1b; }
 .map.tall { height: 620px; }
-.leaflet-container { background: #0a0f1b; font: inherit; }
-.leaflet-control-attribution { background: rgba(11, 18, 32, .7) !important; color: var(--dim) !important; }
-.leaflet-control-attribution a { color: var(--muted) !important; }
-.leaflet-bar a { background: var(--panel) !important; color: var(--text) !important; border-color: var(--line) !important; }
-.leaflet-tooltip.apt { background: var(--panel2); color: var(--text); border: 1px solid var(--line2); font-family: var(--mono); font-size: 12px; box-shadow: none; }
-.leaflet-tooltip.apt::before { display: none; }
+.maplibregl-map { font: inherit; }
+.maplibregl-ctrl-attrib { background: rgba(11, 18, 32, .75) !important; color: var(--dim) !important; }
+.maplibregl-ctrl-attrib a { color: var(--muted) !important; }
+.maplibregl-ctrl-attrib-button { filter: invert(1); }
+.maplibregl-ctrl-group { background: var(--panel) !important; border: 1px solid var(--line); box-shadow: none !important; }
+.maplibregl-ctrl-group button + button { border-top-color: var(--line) !important; }
+.maplibregl-ctrl-group button .maplibregl-ctrl-icon { filter: invert(.9); }
+.basemap-ctrl { display: flex; align-items: center; }
+.basemap-ctrl select { background: transparent; border: 0; color: var(--text); padding: 4px 6px; font-size: 12px; cursor: pointer; }
+.basemap-ctrl select option { background: var(--panel); }
+.basemap-ctrl .globe-btn { width: 30px; height: 29px; border-left: 1px solid var(--line) !important; border-top: 0 !important; opacity: .45; font-size: 15px; }
+.basemap-ctrl .globe-btn.on { opacity: 1; }
+.apt-pop .maplibregl-popup-content { background: var(--panel2); color: var(--text); border: 1px solid var(--line2); font-family: var(--mono); font-size: 12px; padding: 4px 8px; border-radius: 6px; box-shadow: none; }
+.apt-pop .maplibregl-popup-tip { display: none; }
+.apt-mk { display: flex; align-items: center; gap: 6px; pointer-events: none; }
+.apt-mk i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #0b1220; box-shadow: 0 0 0 1px rgba(255,255,255,.5); }
+.apt-mk span { background: rgba(24, 37, 62, .92); border: 1px solid var(--line2); color: var(--text); font-family: var(--mono); font-size: 12px; padding: 2px 6px; border-radius: 5px; white-space: nowrap; }
+.plane-mk { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; box-shadow: 0 0 0 4px rgba(245, 181, 68, .3); }
 .legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); }
 .legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
 

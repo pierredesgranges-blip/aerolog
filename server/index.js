@@ -51,7 +51,7 @@ app.post('/api/logout', (req, res) => {
   res.setHeader('Set-Cookie', `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
   res.json({ ok: true });
 });
-app.get('/api/meta', (req, res) => res.json({ version: pkg.version, authRequired: !!PASSWORD, authed: isAuthed(req) }));
+app.get('/api/meta', (req, res) => res.json({ version: pkg.version, authRequired: !!PASSWORD, authed: isAuthed(req), mapStyle: process.env.AEROLOG_MAP_STYLE || 'dark' }));
 app.get('/healthz', (req, res) => res.send('ok'));
 app.use('/api', (req, res, next) => (isAuthed(req) ? next() : res.status(401).json({ error: 'Non authentifié' })));
 
@@ -289,15 +289,55 @@ function parseCsvTable(text) {
   return rows.map(r => Object.fromEntries(head.map((h, i) => [h, r[i]])));
 }
 
+// Conversion d'un vol exporté par perdian/flightlog (export JSON ou XML)
+const FL_CLASS = { ECONOMY: 'economy', PREMIUM_ECONOMY: 'premium', BUSINESS: 'business', FIRST: 'first' };
+const FL_REASON = { PRIVATE: 'leisure', BUSINESS: 'business', CREW: 'work', VIRTUAL: 'other' };
+const flDate = v => (Array.isArray(v) ? v.map((n, i) => String(n).padStart(i ? 2 : 4, '0')).join('-') : v ? String(v).slice(0, 10) : null);
+const flTime = v => (Array.isArray(v) ? v.slice(0, 2).map(n => String(n).padStart(2, '0')).join(':') : v ? String(v).slice(0, 5) : null);
+function fromFlightlog(it) {
+  const airline = clean(it.airlineCode);
+  let fn = clean(it.flightNumber);
+  if (fn && airline && /^\d/.test(String(fn))) fn = airline + fn;
+  let type = clean(it.aircraftType), name = clean(it.aircraftName);
+  if (type && !/^[A-Z0-9]{2,4}$/i.test(type)) {
+    const p = ref.searchPlanes(type)[0];
+    if (!name) name = type;
+    type = p ? p.icao || p.iata : null;
+  }
+  const date = flDate(it.departureDateLocal), arrDate = flDate(it.arrivalDateLocal);
+  const dur = /^(\d+):(\d{2})$/.exec(String(it.flightDuration || ''));
+  return {
+    date, dep_code: it.departureAirportCode, arr_code: it.arrivalAirportCode,
+    dep_time: flTime(it.departureTimeLocal), arr_time: flTime(it.arrivalTimeLocal),
+    arr_date: arrDate && arrDate !== date ? arrDate : null,
+    airline_code: airline, airline_name: clean(it.airlineName), flight_number: fn,
+    aircraft_type: type, aircraft_name: name, aircraft_reg: clean(it.aircraftRegistration),
+    cabin_class: FL_CLASS[it.cabinClass] || null, reason: FL_REASON[it.flightReason] || null,
+    role: it.flightReason === 'CREW' ? 'crew' : 'passenger',
+    seat: clean(it.seatNumber), seat_type: it.seatType ? String(it.seatType).toLowerCase() : null,
+    notes: clean(it.comment), duration_min: dur ? +dur[1] * 60 + +dur[2] : null,
+  };
+}
+function parseFlightlogXml(text) {
+  const { XMLParser } = require('fast-xml-parser');
+  const doc = new XMLParser({ ignoreAttributes: true, parseTagValue: false, trimValues: true }).parse(text);
+  const root = doc['flights-exchange-package'] || doc.FlightsExchangePackage || Object.values(doc).find(v => v && typeof v === 'object');
+  const fl = root && root.flights && root.flights.flight;
+  if (!fl) throw new Error('XML non reconnu (export FlightLog attendu).');
+  return Array.isArray(fl) ? fl : [fl];
+}
+
 app.post('/api/import', wrap((req, res) => {
   let list;
   const mode = req.query.mode === 'replace' ? 'replace' : 'append';
   if (typeof req.body === 'string') {
     const t = req.body.trim();
-    list = t.startsWith('{') || t.startsWith('[') ? JSON.parse(t) : parseCsvTable(t);
+    list = t.startsWith('<') ? parseFlightlogXml(t) : t.startsWith('{') || t.startsWith('[') ? JSON.parse(t) : parseCsvTable(t);
   } else list = req.body;
   if (list && Array.isArray(list.flights)) list = list.flights;
-  if (!Array.isArray(list)) throw new Error('Format non reconnu (JSON AeroLog ou CSV attendu).');
+  if (!Array.isArray(list)) throw new Error('Format non reconnu (JSON/XML FlightLog, JSON AeroLog ou CSV attendu).');
+  const isFlightlog = list.some(it => it && ('departureAirportCode' in it || 'departureDateLocal' in it));
+  if (isFlightlog) list = list.map(fromFlightlog);
   const errors = []; let imported = 0;
   db.exec('BEGIN');
   try {
@@ -311,7 +351,7 @@ app.post('/api/import', wrap((req, res) => {
 }));
 
 /* ---------- Frontend ---------- */
-app.use('/vendor/leaflet', express.static(path.join(path.dirname(require.resolve('leaflet/package.json')), 'dist'), { maxAge: '30d' }));
+app.use('/vendor/maplibre', express.static(path.join(path.dirname(require.resolve('maplibre-gl/package.json')), 'dist'), { maxAge: '30d' }));
 app.use(express.static(path.join(__dirname, '..', 'public'), { maxAge: '1h' }));
 app.get(/^\/(?!api\/).*/, (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'index.html')));
 

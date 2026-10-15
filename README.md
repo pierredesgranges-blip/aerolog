@@ -10,8 +10,10 @@ Carnet de vols auto-hébergé, inspiré de [perdian/flightlog](https://github.co
 - **Import KML Flightradar24** : trace colorée par altitude, profil altitude/vitesse interactif (survol = position sur la carte), distance réellement parcourue
 - **Pré-remplissage** depuis le KML : aéroports (point le plus proche du 1er/dernier point), date, heures, n° de vol / indicatif (nom du fichier FR24 « AF1234/AFR1234 »), compagnie
 - **Import groupé** de KML : un vol créé par fichier
+- Cartes vectorielles **MapLibre GL + OpenFreeMap** (Sombre, Fiord, Clair, Liberty, Bright) avec **vue globe**, sélecteur de fond sur chaque carte
 - Tableau de bord avec carte de tous les vols, filtres par rôle et par année
 - Statistiques : années (ventilées par rôle), saisonnalité, aéroports, compagnies, liaisons, types, immatriculations, pays, fonctions, classes, records
+- **Import depuis FlightLog** (perdian/flightlog) : exports JSON et XML (menu *Export*), y compris vols équipage (motif CREW → rôle Équipage)
 - Export / import **JSON** (sauvegarde complète avec traces) et **CSV**
 - Mot de passe d'accès optionnel, base **SQLite** unique (`/data/aerolog.db`)
 
@@ -38,6 +40,7 @@ npm ci && npm start
 | `PORT` | `8080` | Port d'écoute |
 | `AEROLOG_DATA_DIR` | `/data` (Docker) | Dossier de la base SQLite |
 | `AEROLOG_PASSWORD` | *(vide)* | Mot de passe d'accès ; vide = pas d'authentification |
+| `AEROLOG_MAP_STYLE` | `dark` | Fond par défaut : `dark`, `fiord`, `positron`, `liberty`, `bright` ou URL d'un style MapLibre |
 | `AEROLOG_SECRET` | généré et stocké en base | Clé de signature des sessions |
 
 ## Déploiement sur RunTipi
@@ -55,4 +58,4 @@ npm ci && npm start
 
 ## Crédits
 
-Données aéroports/compagnies/avions : [OpenFlights](https://openflights.org/data.html) (ODbL). Cartographie : Leaflet, fonds © OpenStreetMap / CARTO. Logos compagnies : pics.avs.io.
+Données aéroports/compagnies/avions : [OpenFlights](https://openflights.org/data.html) (ODbL). Cartographie : MapLibre GL JS, fonds [OpenFreeMap](https://openfreemap.org) © OpenMapTiles, données © OpenStreetMap. Logos compagnies : pics.avs.io.

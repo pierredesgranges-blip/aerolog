@@ -1,0 +1,15 @@
+# Lancement autonome (hors RunTipi) : docker compose up -d --build
+services:
+  aerolog:
+    build: .
+    image: aerolog:local
+    container_name: aerolog
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - TZ=Europe/Paris
+      # Laisser vide pour désactiver la connexion (usage en réseau local uniquement)
+      - AEROLOG_PASSWORD=
+    volumes:
+      - ./var:/data

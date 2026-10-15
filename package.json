@@ -1,0 +1,20 @@
+{
+  "name": "aerolog",
+  "version": "1.0.0",
+  "description": "Carnet de vols auto-hébergé (passager & équipage) avec import des trajectoires KML Flightradar24",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "AEROLOG_DATA_DIR=./var node --watch server/index.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.22.3",
+    "fast-xml-parser": "^4.5.7",
+    "leaflet": "^1.9.4"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "private": true
+}

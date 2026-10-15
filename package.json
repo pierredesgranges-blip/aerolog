@@ -1,6 +1,6 @@
 {
   "name": "aerolog",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Carnet de vols auto-hébergé (passager & équipage) avec import des trajectoires KML Flightradar24",
   "main": "server/index.js",
   "scripts": {

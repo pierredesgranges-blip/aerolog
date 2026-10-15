@@ -352,6 +352,11 @@ app.post('/api/import', wrap((req, res) => {
 
 /* ---------- Frontend ---------- */
 app.use('/vendor/maplibre', express.static(path.join(path.dirname(require.resolve('maplibre-gl/package.json')), 'dist'), { maxAge: '30d' }));
+// PWA : le service worker et le manifeste ne doivent jamais être mis en cache par le navigateur
+app.get('/sw.js', (req, res) => { res.setHeader('Cache-Control', 'no-cache'); res.setHeader('Service-Worker-Allowed', '/'); res.sendFile(path.join(__dirname, '..', 'public', 'sw.js')); });
+app.get('/manifest.webmanifest', (req, res) => { res.setHeader('Cache-Control', 'no-cache'); res.type('application/manifest+json').sendFile(path.join(__dirname, '..', 'public', 'manifest.webmanifest')); });
+// Partage Android reçu sans service worker actif : on ouvre simplement le formulaire
+app.post('/share-target', (req, res) => res.redirect(303, '/#/new'));
 app.use(express.static(path.join(__dirname, '..', 'public'), { maxAge: '1h' }));
 app.get(/^\/(?!api\/).*/, (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'index.html')));
 

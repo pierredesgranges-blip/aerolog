@@ -224,7 +224,7 @@
   const routes = [
     [/^\/?$/, renderHome, 'home'],
     [/^\/flights$/, renderFlights, 'flights'],
-    [/^\/new$/, () => renderForm(null), 'flights'],
+    [/^\/new$/, () => renderForm(null), 'new'],
     [/^\/flight\/(\d+)$/, id => renderDetail(+id), 'flights'],
     [/^\/flight\/(\d+)\/edit$/, id => renderForm(+id), 'flights'],
     [/^\/stats$/, renderStats, 'stats'],
@@ -492,13 +492,14 @@
       }
       canvas._geom = { pl, w };
     }
-    canvas.onmousemove = e => {
+    canvas.style.touchAction = 'pan-y';
+    canvas.onpointermove = canvas.onpointerdown = e => {
       const r = canvas.getBoundingClientRect(), g = canvas._geom;
       const v = x0 + ((e.clientX - r.left - g.pl) / g.w) * (x1 - x0);
       let best = 0, bd = Infinity; xs.forEach((x, i) => { const d = Math.abs(x - v); if (d < bd) { bd = d; best = i; } });
       hover = best; draw(); onHover(best);
     };
-    canvas.onmouseleave = () => { hover = -1; draw(); };
+    canvas.onpointerleave = () => { hover = -1; draw(); };
     draw();
     new ResizeObserver(draw).observe(canvas);
   }
@@ -659,6 +660,19 @@
       } catch (err) { $('#trkinfo').innerHTML = `<span style="color:var(--danger)">${esc(err.message)}</span>`; }
     };
     $('#kml').onchange = e => handleFile(e.target.files[0]);
+    // Fichier reçu via « Partager » d'Android (déposé en cache par le service worker)
+    if (!id && /[?&]share=1/.test(location.search)) {
+      history.replaceState(null, '', '/#/new');
+      try {
+        const cache = await caches.open('aerolog-share');
+        const res = await cache.match('/shared-track');
+        if (res) {
+          const name = decodeURIComponent(res.headers.get('X-Filename') || 'trace.kml');
+          await cache.delete('/shared-track');
+          handleFile(new File([await res.blob()], name));
+        }
+      } catch (err) { toast('Fichier partagé illisible : ' + err.message, true); }
+    }
     const drop = $('#drop');
     drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
     drop.ondragleave = () => drop.classList.remove('over');
@@ -784,6 +798,15 @@
   }
 
   /* ================= Démarrage ================= */
+  /* ================= Application installable (PWA) ================= */
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(e => console.warn('Service worker :', e.message)));
+  }
+  let installEvt = null;
+  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; $('#installBtn').hidden = false; });
+  window.addEventListener('appinstalled', () => { $('#installBtn').hidden = true; toast('AeroLog est installée'); });
+  $('#installBtn').onclick = async () => { if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice; installEvt = null; $('#installBtn').hidden = true; };
+
   (async () => {
     syncFilters();
     state.meta = await (await fetch('/api/meta')).json();

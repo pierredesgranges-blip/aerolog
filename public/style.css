@@ -45,6 +45,10 @@ h2 { font-size: 15px; }
 .nav a { padding: 7px 12px; border-radius: 8px; color: var(--muted); white-space: nowrap; }
 .nav a:hover { color: var(--text); background: var(--panel); }
 .nav a.active { color: var(--text); background: var(--panel2); box-shadow: inset 0 -2px 0 var(--accent); }
+.nav a svg { display: none; width: 22px; height: 22px; fill: currentColor; }
+.nav a .sh, .nav .nav-new { display: none; }
+body { padding-bottom: env(safe-area-inset-bottom); }
+.topbar { padding-top: max(10px, env(safe-area-inset-top)); }
 .filters { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 .seg { display: inline-flex; background: var(--panel); border: 1px solid var(--line); border-radius: 9px; padding: 2px; }
 .seg button { border: 0; background: none; padding: 5px 10px; border-radius: 7px; cursor: pointer; color: var(--muted); }
@@ -130,7 +134,7 @@ table.flights th { text-align: left; font-size: 11px; text-transform: uppercase;
 table.flights td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
 table.flights tbody tr { cursor: pointer; }
 table.flights tbody tr:hover td { background: var(--panel2); }
-table.flights td.r, table.flights th.r { text-align: right; }
+table.flights td.r, table.flights th.r { text-align: right; white-space: nowrap; }
 .al { display: flex; align-items: center; gap: 8px; }
 .al img { height: 18px; max-width: 54px; object-fit: contain; background: #fff; border-radius: 3px; padding: 1px 3px; }
 .year-sep td { background: var(--bg2) !important; color: var(--accent); font-family: var(--mono); font-weight: 600; cursor: default; padding: 6px 12px !important; }
@@ -230,11 +234,34 @@ code { font-family: var(--mono); background: var(--bg2); padding: 1px 5px; borde
   .sticky { position: static; }
 }
 @media (max-width: 760px) {
-  main { padding: 12px; }
-  .topbar { flex-wrap: wrap; gap: 10px; padding: 10px 12px; }
-  .nav { order: 3; width: 100%; overflow-x: auto; }
+  main { padding: 12px 12px calc(84px + env(safe-area-inset-bottom)); }
+  .topbar { flex-wrap: wrap; gap: 8px 10px; padding: max(10px, env(safe-area-inset-top)) 12px 10px; }
+  .topbar .new-btn { display: none; }
+  .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--bg); } /* sinon la barre d'onglets fixe serait piégée dans l'en-tête */
+  #installBtn { margin-left: auto; }
   .filters { margin-left: 0; order: 4; width: 100%; }
-  .topbar > .btn { margin-left: auto; }
+  .filters .seg { flex: 1; } .filters .seg button { flex: 1; padding: 6px 4px; }
+  /* Barre d'onglets inférieure façon application */
+  .nav {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 1500; gap: 0;
+    display: grid; grid-template-columns: repeat(5, 1fr); align-items: end;
+    background: rgba(11, 18, 32, .96); backdrop-filter: blur(12px); border-top: 1px solid var(--line);
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+  }
+  .nav a { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 2px; font-size: 11px; border-radius: 10px; background: none !important; box-shadow: none !important; }
+  .nav a svg { display: block; }
+  .nav a.active { color: var(--accent); }
+  .nav a .lg { display: none; } .nav a .sh { display: inline; }
+  .nav .nav-new { display: flex; }
+  .nav .nav-new svg { width: 46px; height: 46px; padding: 11px; margin-top: -22px; border-radius: 50%; background: var(--accent); fill: var(--accent-ink); box-shadow: 0 6px 18px rgba(245, 181, 68, .35), 0 0 0 4px var(--bg); }
+  .toast { bottom: calc(90px + env(safe-area-inset-bottom)); }
+  .formbar { position: sticky; bottom: calc(70px + env(safe-area-inset-bottom)); background: linear-gradient(transparent, var(--bg) 30%); padding-top: 24px; z-index: 5; }
+  .toolbar h1 { font-size: 18px; }
+  .form > .sticky { order: -1; } /* trace FR24 en premier sur mobile */
+  .hero { gap: 14px; padding: 14px; }
+  .hero .apt { min-width: 0; }
+  .hero .mid { order: 3; flex-basis: 100%; }
+  .map.tall { height: 420px; }
   .kpis { grid-template-columns: 1fr 1fr; }
   .stats { grid-template-columns: 1fr; }
   .stats .wide { grid-column: auto; }

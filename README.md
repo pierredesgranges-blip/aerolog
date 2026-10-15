@@ -17,6 +17,17 @@ Carnet de vols auto-hébergé, inspiré de [perdian/flightlog](https://github.co
 - Export / import **JSON** (sauvegarde complète avec traces) et **CSV**
 - Mot de passe d'accès optionnel, base **SQLite** unique (`/data/aerolog.db`)
 
+## Application mobile (Android)
+
+AeroLog est une PWA installable : dans Chrome Android, ouvrir l'adresse de l'app puis menu ⋮ → **Installer l'application** (ou le bouton « Installer l'app » en haut de page).
+
+- Icône sur l'écran d'accueil, plein écran, barre d'onglets en bas
+- Consultation hors connexion des pages déjà ouvertes
+- **Partage direct** : depuis le gestionnaire de fichiers ou le navigateur, *Partager* un fichier KML/CSV → **AeroLog** ouvre le formulaire pré-rempli
+- Raccourcis (appui long sur l'icône) : *Nouveau vol*, *Mes vols*
+
+⚠️ L'installation exige **HTTPS** : exposez l'app via un nom de domaine dans RunTipi (ou un tunnel). En `http://IP:port` sur le réseau local, Chrome ne propose qu'un simple raccourci, sans hors-ligne ni partage.
+
 ## Récupérer un KML sur Flightradar24
 
 Sur la page historique d'un vol (*Data → Flights → Playback*), bouton **KML** (ou CSV). Un abonnement FR24 peut être nécessaire selon l'ancienneté du vol.
